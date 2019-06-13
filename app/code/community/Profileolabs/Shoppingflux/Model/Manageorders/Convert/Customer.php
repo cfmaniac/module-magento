@@ -36,8 +36,15 @@ class Profileolabs_Shoppingflux_Model_Manageorders_Convert_Customer extends Vari
         $coreHelper = Mage::helper('core');
         $coreHelper->copyFieldset('shoppingflux_convert_customer', 'to_customer', $data, $customer);
 
+        /* Modified to Split Customer Name into First and Last Name : JCH 05/2019*/
         if (trim($customer->getFirstname()) === '') {
-            $customer->setFirstname('__');
+            //$customer->setFirstname('__');
+            $full = $customer->getLastName();
+            $full1 = explode(' ', $full);
+            $first = $full1[0];
+            $last = ltrim($full, $first . ' ');
+            $customer->setFirstname('__' & $first);
+            $customer->setLastname($last);
         }
 
         return $customer;
@@ -78,7 +85,14 @@ class Profileolabs_Shoppingflux_Model_Manageorders_Convert_Customer extends Vari
         $coreHelper->copyFieldset('shoppingflux_convert_customer', 'to_customer_address', $data, $address);
 
         if (trim($address->getFirstname()) === '') {
-            $address->setFirstname(' __ ');
+           /* Modified to Split Customer Name into First and Last Name : JCH 05/2019*/
+           //$address->setFirstname(' __ ');
+           $full = $address->getLastName();
+		   $full1 = explode(' ', $full);
+		   $first = $full1[0];
+		   $last = ltrim($full, $first . ' ');
+		   $address->setFirstname('__' & $first);
+		   $address->setLastname($last);  
         }
 
         if (strpos(strtolower($address->getCountryId()), 'france') !== false) {
@@ -108,13 +122,34 @@ class Profileolabs_Shoppingflux_Model_Manageorders_Convert_Customer extends Vari
         if ($countryId === 'FR') {
             $regionCode = $stringHelper->substr(str_pad($address->getPostcode(), 5, '0', STR_PAD_LEFT), 0, 2);
         } elseif (in_array($countryId, array('CA', 'US'), true)) {
-            $regionCode = trim($data['Street2']);
+           //Modified to set state/region for US addresses
+           $didSetUSState = FALSE;
+           if ('US' == $data['Country']) {
+            // set state for US address
+            // (the default behavior was to put the State in Street 2, which doesn't work for us)
+            $state  = strtoupper(trim($data['Street2']));
+            $region = Mage::getModel('directory/region')->loadByCode($state, 'US');
+            if (is_object($region)) {           
+                $address->setStreet( array($data['Street1'], '') );
+                $address->setRegion( $region->getName() );
+                $address->setRegionId( $region->getId() );            
+                $didSetUSState = TRUE;
+                Mage::log('US State: ' . $region->getName() . ' [' . $region->getId() . ']', NULL, 'shoppingfeed_customer.log');  // temporary data log
+            }
+            unset($region);
+        }
+        // for international orders, if not able to set US state, then do the default Shopping Feed functionality 
+        if (!$didSetUSState) {
+            $address->setStreet(array($data['Street1'], $data['Street2']));
+        }
+            
+            /*$regionCode = trim($data['Street2']);
 
             if (!preg_match('/^[a-z]{2}$/i', $regionCode)) {
                 $regionCode = null;
             } else {
                 $isAddressRegionCode = true;
-            }
+            }*?
         }
 
         if ($regionCode) {
